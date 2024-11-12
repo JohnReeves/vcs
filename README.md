@@ -1,6 +1,5 @@
 # vcs
 a version control system in python
-
 ## the file structure
 ```
 my_vcs/
@@ -12,3 +11,8 @@ my_vcs/
   ├── repository_manager.py
   └── file1.txt
 ```
+## the basic ideas
+* initialise the repository
+* commit files and track change
+* show differences between versions
+* display simple metrics
