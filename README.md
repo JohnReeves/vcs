@@ -2,6 +2,7 @@
 a version control system in python
 
 ## the file structure
+```
 my_vcs/
   ├── .vcs/
   │   ├── versions/
@@ -10,3 +11,4 @@ my_vcs/
   │   └── metadata.json
   ├── repository_manager.py
   └── file1.txt
+```
