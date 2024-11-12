@@ -1,7 +1,7 @@
 # vcs
 a version control system in python
 ## the basic ideas
-* create a cli to:
+- create a cli to:
  * initialise the repository
  * commit files and track change
  * show differences between versions
