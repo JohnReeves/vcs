@@ -2,6 +2,7 @@ import os
 import json
 import shutil
 import difflib
+import cmd
 
 REPO_DIR = ".vcs"
 VERSIONS_DIR = os.path.join(REPO_DIR, "versions")
@@ -66,9 +67,46 @@ def calculate_metrics(file_name, version1, version2):
     print(f"  Deletions: {deletions}")
 
 
-if __name__ == "__main__":
-    init_repo()
-    commit_file("file1.txt", "1.0")
-    show_diff("file1.txt", "1.0", "1.1")
-    calculate_metrics("file1.txt", "1.0", "1.1")
+class VCS(cmd.Cmd):
+    prompt = "vcs> "
 
+    def do_init(self):
+        """Usage: init_repo"""
+        try:
+            init_repo()
+        except ValueError:
+            print("Invalid arguments! Use: init")
+
+    def do_commit(self, args):
+        """Usage: commit <file_path> <version>"""
+        try:
+            file_path, version = args.split()
+            commit_file(file_path, version)
+        except ValueError:
+            print("Invalid arguments! Use: commit <file_path> <version>")
+
+    def do_diff(self, args):
+        """Usage: diff <file_name> <version1> <version2>"""
+        try:
+            file_name, version1, version2 = args.split()
+            show_diff(file_name, version1, version2)
+        except ValueError:
+            print("Invalid arguments! Use: diff <file_name> <version1> <version2>")
+
+    def do_metrics(self, args):
+        """Usage: metrics <file_name> <version1> <version2>"""
+        try:
+            file_name, version1, version2 = args.split()
+            calculate_metrics(file_name, version1, version2)
+        except ValueError:
+            print("Invalid arguments! Use: metrics <file_name> <version1> <version2>")
+
+    def do_exit(self, args):
+        """Exit the VCS interface."""
+        print("Exiting...")
+        return True
+        
+
+if __name__ == '__main__':
+    vcs = VCS()
+    vcs.cmdloop()
