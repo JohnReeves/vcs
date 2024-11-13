@@ -103,7 +103,7 @@ class FileVersion:
         additions = sum(1 for line in diff if line.startswith('+') and not line.startswith('+++'))
         deletions = sum(1 for line in diff if line.startswith('-') and not line.startswith('---'))
 
-        print(f"Changes between {self.file_name} {self.version1} and {other_version.version}:")
+        print(f"Changes between {self.file_name} {self.version} and {other_version.version}:")
         print(f"  Additions: {additions}")
         print(f"  Deletions: {deletions}")
 
