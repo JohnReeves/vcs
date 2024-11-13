@@ -2,7 +2,7 @@
 a version control system in python
 ## the basic ideas
 - create a cli to
-  - initialise the repository
+  - initialise the zipfile repository
   - commit files and track change
   - show differences between versions
   - display simple metrics
