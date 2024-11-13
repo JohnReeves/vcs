@@ -2,6 +2,7 @@ import os
 import json
 import shutil
 import difflib
+import zipfile
 import cmd
 
 REPO_DIR = ".vcs"
@@ -20,10 +21,13 @@ def init_repo():
 
 def commit_file(file_path, version):
     file_name = os.path.basename(file_path)
-    versioned_file = os.path.join(VERSIONS_DIR, f"{file_name}_{version}.txt")
+    zip_name = os.path.join(VERSIONS_DIR, f"{file_name}_{version}.zip")
 
-    shutil.copy(file_path, versioned_file)
+    # Create a zip archive for the version
+    with zipfile.ZipFile(zip_name, 'w') as zipf:
+        zipf.write(file_path, arcname=file_name)
 
+    # Update metadata
     with open(METADATA_FILE, "r+") as f:
         metadata = json.load(f)
         metadata["current_version"][file_name] = version
@@ -34,30 +38,34 @@ def commit_file(file_path, version):
         f.seek(0)
         json.dump(metadata, f, indent=4)
     
-    print(f"Committed {file_name} as version {version}.")
-
+    print(f"Committed {file_name} as version {version} (zipped).")
 
 def show_diff(file_name, version1, version2):
-    file1 = os.path.join(VERSIONS_DIR, f"{file_name}_{version1}.txt")
-    file2 = os.path.join(VERSIONS_DIR, f"{file_name}_{version2}.txt")
+    zip1 = os.path.join(VERSIONS_DIR, f"{file_name}_{version1}.zip")
+    zip2 = os.path.join(VERSIONS_DIR, f"{file_name}_{version2}.zip")
 
-    with open(file1, "r") as f1, open(file2, "r") as f2:
-        diff = difflib.unified_diff(f1.readlines(), f2.readlines(), 
-                                    fromfile=f"{file_name}_{version1}",
-                                    tofile=f"{file_name}_{version2}")
+    # Extract files from the zip archives
+    with zipfile.ZipFile(zip1, 'r') as zipf1, zipfile.ZipFile(zip2, 'r') as zipf2:
+        file1_content = zipf1.read(file_name).decode('utf-8').splitlines()
+        file2_content = zipf2.read(file_name).decode('utf-8').splitlines()
+
+    diff = difflib.unified_diff(file1_content, file2_content, 
+                                fromfile=f"{file_name}_{version1}",
+                                tofile=f"{file_name}_{version2}")
 
     for line in diff:
-        print(line, end="")
+        print(line)
 
 def calculate_metrics(file_name, version1, version2):
-    file1 = os.path.join(VERSIONS_DIR, f"{file_name}_{version1}.txt")
-    file2 = os.path.join(VERSIONS_DIR, f"{file_name}_{version2}.txt")
+    zip1 = os.path.join(VERSIONS_DIR, f"{file_name}_{version1}.zip")
+    zip2 = os.path.join(VERSIONS_DIR, f"{file_name}_{version2}.zip")
 
-    with open(file1, "r") as f1, open(file2, "r") as f2:
-        lines1 = f1.readlines()
-        lines2 = f2.readlines()
+    # Extract files from the zip archives
+    with zipfile.ZipFile(zip1, 'r') as zipf1, zipfile.ZipFile(zip2, 'r') as zipf2:
+        file1_content = zipf1.read(file_name).decode('utf-8').splitlines()
+        file2_content = zipf2.read(file_name).decode('utf-8').splitlines()
     
-    diff = difflib.unified_diff(lines1, lines2)
+    diff = difflib.unified_diff(file1_content, file2_content)
 
     additions = sum(1 for line in diff if line.startswith('+') and not line.startswith('+++'))
     deletions = sum(1 for line in diff if line.startswith('-') and not line.startswith('---'))
