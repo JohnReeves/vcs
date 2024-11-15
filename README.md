@@ -1,12 +1,15 @@
 # vcs
 a version control system in python
 
-## the basic requirements
-- create a cli to
-  - initialise the zipfile repository
-  - commit and checkout files and track change
-  - show differences between versions
-  - display simple metrics
+## `cmd` command line interface
+- provide help and a command history
+- initialise the zipfile repository
+- commit and checkout files and track change
+- create and merge feature branches
+- add and list project tags
+- pull and push to a remote repository
+- show differences between versions
+- display simple metrics
 
 ## class structure
 - `Repository` manages the repository (initialization, commits, file versioning)
@@ -58,11 +61,5 @@ my_vcs/
   - sets the current user who will be associated with commits
 
 ## planned improvements
-- more verbose cli 
-- object oriented coding style
-- push & pull to a 'remote' repository
-- feature branches
-- support multiple users
-  - user names
-  - remote repo locking
+- make the features robust to user input errors
 - line count, path and data complexity
