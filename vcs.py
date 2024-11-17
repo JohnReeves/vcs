@@ -17,17 +17,29 @@ class Repository:
         self.versions_dir = os.path.join(self.repo_dir, "versions")
 
         os.makedirs(self.versions_dir, exist_ok=True)
-        
+
         # Initialize the main branch if it doesn't exist
         if not os.path.exists(self.metadata_file):
             self.save_branch_metadata("main", {"files": {}, "commits": [], "tags": {}})
+        else:
+            print(f"Loaded repository at {self.repo_dir}")
+
+    def validate_file_path(self, file_path):
+        """Checks if the file exists and is accessible"""
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Error: File '{file_path}' does not exist")
+        if not os.path.isfile(file_path):
+            raise ValueError(f"Error: '{file_path}' is not a valid file")
 
     def load_branch_metadata(self, branch_name):
         """Loads metadata for a specific branch from its dedicated file"""
         branch_metadata_file = os.path.join(self.repo_dir, f"{branch_name}_metadata.json")
         if os.path.exists(branch_metadata_file):
-            with open(branch_metadata_file, "r") as f:
-                return json.load(f)
+            try:
+                with open(branch_metadata_file, "r") as f:
+                    return json.load(f)
+            except json.JSONDecodeError:
+                raise ValueError(f"Error: Metadata file for branch '{branch_name}' is corrupted")
         else:
             # Initialize default metadata structure for a new branch
             return {"files": {}, "commits": [], "tags": {}}
@@ -42,23 +54,39 @@ class Repository:
         """Detects if the file has changed compared to its last committed version"""
         file_name = os.path.basename(file_path)
         last_version_path = os.path.join(self.versions_dir, f"{file_name}_v{last_version}.zip")
-        
+
         if not os.path.exists(last_version_path):
+            print(f"Warning: No previous version of '{file_name}' found. Assuming changes")
             return True
 
-        with open(file_path, "rb") as current_file:
-            current_data = current_file.read()
+        try:
+            with open(file_path, "rb") as current_file:
+                current_data = current_file.read()
 
-        with zipfile.ZipFile(last_version_path, "r") as zip_file:
-            with zip_file.open(file_name, "r") as previous_file:
-                previous_data = previous_file.read()
+            with zipfile.ZipFile(last_version_path, "r") as zip_file:
+                with zip_file.open(file_name, "r") as previous_file:
+                    previous_data = previous_file.read()
 
-        return current_data != previous_data
+            return current_data != previous_data
+        except Exception as e:
+            print(f"Error comparing versions of '{file_name}': {e}")
+            return True
 
     def commit_file(self, file_path, version):
         """Commits a file by saving its version in the current branch metadata"""
+        try:
+            self.validate_file_path(file_path)
+        except (FileNotFoundError, ValueError) as e:
+            print(e)
+            return
+
         file_name = os.path.basename(file_path)
         branch_metadata = self.load_branch_metadata(self.current_branch)
+
+        # Validate version string
+        if not version.isdigit():
+            print("Error: Version must be a numeric string")
+            return
 
         # Check for file changes before committing
         if file_name in branch_metadata["files"]:
@@ -68,18 +96,34 @@ class Repository:
                 return
 
         # Save the new version
-        versioned_file = FileVersion(file_name, version, self.versions_dir)
-        versioned_file.zip_file(file_path)
+        try:
+            versioned_file = FileVersion(file_name, version, self.versions_dir)
+            versioned_file.zip_file(file_path)
+        except Exception as e:
+            print(f"Error during commit: {e}")
+            return
 
         # Update metadata
         branch_metadata["files"][file_name] = version
         branch_metadata["commits"].append({
             "file": file_name,
             "version": version,
-            "user": self.user
+            "user": self.user,
+            "timestamp": time.time(),
         })
         self.save_branch_metadata(self.current_branch, branch_metadata)
         print(f"Committed '{file_name}' as version {version} by '{self.user}'")
+
+    def checkout(self, file_name, version):
+        """Restores a file from a specific version"""
+        try:
+            versioned_file = FileVersion(file_name, version, self.versions_dir)
+            versioned_file.unzip_file()
+            print(f"Checked out {file_name} version {version}.")
+        except FileNotFoundError:
+            print(f"Error: Version '{version}' of '{file_name}' does not exist")
+        except Exception as e:
+            print(f"Error during checkout: {e}")
 
     def log(self):
         """Prints the commit history"""
@@ -89,12 +133,6 @@ class Repository:
         print("Commit history:")
         for commit in metadata["commits"]:
             print(f"File: {commit['file']} | Version: {commit['version']}")
- 
-    def checkout(self, file_name, version):
-        """Restores a file from a specific version"""
-        versioned_file = FileVersion(file_name, version, self.versions_dir)
-        versioned_file.unzip_file()
-        print(f"Checked out {file_name} version {version}")
 
     def create_branch(self, branch_name):
         """Creates a new branch based on the current branch"""
@@ -399,6 +437,7 @@ class VCSInterface(cmd.Cmd):
 
 if __name__ == '__main__':
     user_name = input("Enter your username: ")
-    repo = Repository(user=user_name)
+    repository = "./"
+    repo = Repository(repo_dir=repository, user=user_name)
     interface = VCSInterface(repo)
     interface.cmdloop() 
