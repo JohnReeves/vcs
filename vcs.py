@@ -1,8 +1,10 @@
 import os
 import json
+import time
+import shutil
 import difflib
 import zipfile
-import shutil
+import readline
 import cmd
 
 class Repository:
@@ -15,7 +17,7 @@ class Repository:
         self.init_repo()
 
     def init_repo(self):
-        """Initializes the repository by creating necessary directories and files."""
+        """Initializes the repository by creating necessary directories and files"""
         os.makedirs(self.versions_dir, exist_ok=True)
         
         # Initialize metadata if it doesn't exist
@@ -27,30 +29,41 @@ class Repository:
                     "current_version": {},
                     "tags": {}
                 }, f)
-        print("Repository initialized.")
-    
-    def commit_file(self, file_path, version):
-        """Commits a file by creating a new version and updating metadata."""
-        file_name = os.path.basename(file_path)
-        versioned_file = FileVersion(file_name, version, self.versions_dir)
-        versioned_file.zip_file(file_path)
+        print("Repository initialized")
 
-        # Update metadata
+    def commit_file(self, file_path, version):
+        """Commits a file by creating a new version only if it changed"""
+        file_name = os.path.basename(file_path)
+        
         with open(self.metadata_file, "r+") as f:
             metadata = json.load(f)
+            
+            # Check if the file has already been committed with this content
+            if file_name in metadata["current_version"]:
+                last_version = metadata["current_version"][file_name]
+                versioned_file = FileVersion(file_name, last_version, self.versions_dir)
+                if versioned_file.is_same_as(file_path):
+                    print(f"No changes detected in {file_name}, skipping commit")
+                    return
+            
+            # If the file changed, zip and save it
+            versioned_file = FileVersion(file_name, version, self.versions_dir)
+            versioned_file.zip_file(file_path)
+
+            # Update commit history metadata
             metadata["current_version"][file_name] = version
             metadata["commits"].append({
                 "file": file_name,
                 "version": version,
-                "user": self.user  # Associate commit with user
+                "user": self.user
             })
+
             f.seek(0)
             json.dump(metadata, f, indent=4)
-        
-        print(f"Committed {file_name} as version {version} by {self.user}.")
+        print(f"Committed {file_name} as version {version} by {self.user}")
 
     def log(self):
-        """Prints the commit history."""
+        """Prints the commit history"""
         with open(self.metadata_file, "r") as f:
             metadata = json.load(f)
         
@@ -59,41 +72,41 @@ class Repository:
             print(f"File: {commit['file']} | Version: {commit['version']}")
  
     def checkout(self, file_name, version):
-        """Restores a file from a specific version."""
+        """Restores a file from a specific version"""
         versioned_file = FileVersion(file_name, version, self.versions_dir)
         versioned_file.unzip_file()
-        print(f"Checked out {file_name} version {version}.")
+        print(f"Checked out {file_name} version {version}")
 
     def create_branch(self, branch_name):
-        """Creates a new branch based on the current branch state."""
+        """Creates a new branch based on the current branch state"""
         with open(self.metadata_file, "r+") as f:
             metadata = json.load(f)
             if branch_name in metadata["branches"]:
-                print(f"Branch {branch_name} already exists.")
+                print(f"Branch {branch_name} already exists")
             else:
-                # Create the new branch based on the current branch state
+                # Create new branch based on the current branch state
                 metadata["branches"][branch_name] = metadata["branches"][self.current_branch].copy()
                 f.seek(0)
                 json.dump(metadata, f, indent=4)
-                print(f"Branch {branch_name} created.")
+                print(f"Branch {branch_name} created")
 
     def switch_branch(self, branch_name):
-        """Switches to the specified branch."""
+        """Switches to the specified branch"""
         with open(self.metadata_file, "r") as f:
             metadata = json.load(f)
         
         if branch_name in metadata["branches"]:
             self.current_branch = branch_name
-            print(f"Switched to branch {branch_name}.")
+            print(f"Switched to branch {branch_name}")
         else:
-            print(f"Branch {branch_name} does not exist.")  
+            print(f"Branch {branch_name} does not exist")  
 
     def merge_branch(self, source_branch):
-        """Merges changes from the source branch into the current branch."""
+        """Merges changes from the source branch into the current branch"""
         with open(self.metadata_file, "r+") as f:
             metadata = json.load(f)
             if source_branch not in metadata["branches"]:
-                print(f"Branch {source_branch} does not exist.")
+                print(f"Branch {source_branch} does not exist")
                 return
             
             # Merge all files from the source branch into the current branch
@@ -105,63 +118,99 @@ class Repository:
                     # No conflict, directly merge
                     current_files[file_name] = source_version
                 else:
-                    # Handle conflict (just print diff for now, could add user input to resolve)
+                    # Conflict resolution prompt
                     version1 = FileVersion(file_name, current_files[file_name], self.versions_dir)
                     version2 = FileVersion(file_name, source_version, self.versions_dir)
-                    print(f"Conflict in {file_name}:")
+                    print(f"Conflict in {file_name}: ")
                     version1.show_diff(version2)
-                    # Simple conflict resolution: pick source branch's version
-                    current_files[file_name] = source_version
+                    
+                    choice = input(f"Choose 'current', 'source', or 'manual' for {file_name}: ").strip().lower()
+                    
+                    if choice == 'current':
+                        continue
+                    elif choice == 'source':
+                        current_files[file_name] = source_version
+                    elif choice == 'manual':
+                        print(f"Edit {file_name} for manual resolution")
+                        # implement logic to open an editor and resolve the conflict
+                    else:
+                        print(f"Choose 'current', 'source', or 'manual' merging for {file_name}")
             
-            # Update the metadata
+            # Update metadata after resolving conflicts
             metadata["branches"][self.current_branch] = current_files
             f.seek(0)
             json.dump(metadata, f, indent=4)
-        print(f"Merged {source_branch} into {self.current_branch}.")
-    
-    def add_tag(self, tag_name, version):
-        """Adds a tag to a specific version."""
+        print(f"Merged {source_branch} into {self.current_branch}")
+        
+    def add_tag(self, tag_name):
+        """Tags the latest commit on the current branch"""
         with open(self.metadata_file, "r+") as f:
             metadata = json.load(f)
+            last_commit = metadata["commits"][-1]
+            
             if tag_name in metadata["tags"]:
-                print(f"Tag {tag_name} already exists.")
+                print(f"Tag {tag_name} already exists")
             else:
-                metadata["tags"][tag_name] = version
+                metadata["tags"][tag_name] = last_commit
                 f.seek(0)
                 json.dump(metadata, f, indent=4)
-                print(f"Tag {tag_name} added to version {version}.")
+                print(f"Tag {tag_name} added to commit {last_commit}")
     
     def list_tags(self):
-        """Lists all the tags in the repository."""
+        """Lists all the tags in the repository"""
         with open(self.metadata_file, "r") as f:
             metadata = json.load(f)
         print("Tags:")
         for tag, version in metadata["tags"].items():
             print(f"Tag: {tag}, Version: {version}")
 
-    def push(self, remote_dir):
-        """Pushes the current branch to the remote repository."""
-        if not os.path.exists(remote_dir):
-            print(f"Remote directory {remote_dir} does not exist.")
-            return
+    def lock_repo(self, remote_dir):
+        """Locks the repository to prevent concurrent operations"""
+        lock_file = os.path.join(remote_dir, "repo.lock")
+        while os.path.exists(lock_file):
+            print("Repository is locked, waiting...")
+            time.sleep(1)
+        
+        with open(lock_file, "w") as f:
+            f.write("locked")
 
-        # Copy current branch's metadata to the remote
-        remote_metadata_file = os.path.join(remote_dir, "metadata.json")
-        shutil.copy(self.metadata_file, remote_metadata_file)
-        shutil.copytree(self.versions_dir, os.path.join(remote_dir, "versions"), dirs_exist_ok=True)
-        print(f"Pushed branch {self.current_branch} to remote repository.")
+    def unlock_repo(self, remote_dir):
+        """Unlocks the repository after the operation is complete"""
+        lock_file = os.path.join(remote_dir, "repo.lock")
+        if os.path.exists(lock_file):
+            os.remove(lock_file)
+
+    def push(self, remote_dir):
+        """Pushes the current branch to the remote repository with locking"""
+        self.lock_repo(remote_dir)
+        try:
+            if not os.path.exists(remote_dir):
+                print(f"Remote directory {remote_dir} does not exist")
+                return
+
+            # Copy current branch's metadata to the remote
+            remote_metadata_file = os.path.join(remote_dir, "metadata.json")
+            shutil.copy(self.metadata_file, remote_metadata_file)
+            shutil.copytree(self.versions_dir, os.path.join(remote_dir, "versions"), dirs_exist_ok=True)
+            print(f"Pushed branch {self.current_branch} to remote repository")        
+        finally:
+            self.unlock_repo(remote_dir)
 
     def pull(self, remote_dir):
-        """Pulls the latest changes from the remote repository."""
-        if not os.path.exists(remote_dir):
-            print(f"Remote directory {remote_dir} does not exist.")
-            return
+        """Pulls the latest changes from the remote repository with locking"""
+        self.lock_repo(remote_dir)
+        try:
+            if not os.path.exists(remote_dir):
+                print(f"Remote directory {remote_dir} does not exist")
+                return
 
-        # Pull metadata and versioned files from remote
-        remote_metadata_file = os.path.join(remote_dir, "metadata.json")
-        shutil.copy(remote_metadata_file, self.metadata_file)
-        shutil.copytree(os.path.join(remote_dir, "versions"), self.versions_dir, dirs_exist_ok=True)
-        print(f"Pulled latest changes from remote repository.")
+            # Pull metadata and versioned files from remote
+            remote_metadata_file = os.path.join(remote_dir, "metadata.json")
+            shutil.copy(remote_metadata_file, self.metadata_file)
+            shutil.copytree(os.path.join(remote_dir, "versions"), self.versions_dir, dirs_exist_ok=True)
+            print(f"Pulled latest changes from remote repository")        
+        finally:
+            self.unlock_repo(remote_dir)
 
 
 class FileVersion:
@@ -171,17 +220,17 @@ class FileVersion:
         self.zip_name = os.path.join(versions_dir, f"{file_name}_{version}.zip")
     
     def zip_file(self, file_path):
-        """Zips a file and stores it as a version."""
+        """Zips a file and stores it as a version"""
         with zipfile.ZipFile(self.zip_name, 'w') as zipf:
             zipf.write(file_path, arcname=self.file_name)
     
     def unzip_file(self, output_dir="."):
-        """Unzips the versioned file to the current directory."""
+        """Unzips the versioned file to the current directory"""
         with zipfile.ZipFile(self.zip_name, 'r') as zipf:
             zipf.extract(self.file_name, output_dir)
     
     def show_diff(self, other_version):
-        """Displays the differences between this version and another version."""
+        """Displays the differences between this version and another version"""
         with zipfile.ZipFile(self.zip_name, 'r') as zipf1, \
              zipfile.ZipFile(other_version.zip_name, 'r') as zipf2:
             
@@ -196,7 +245,7 @@ class FileVersion:
             print(line)
 
     def calculate_metrics(self, other_version):
-        """Displays the differences between this version and another version."""
+        """Displays the differences between this version and another version"""
         with zipfile.ZipFile(self.zip_name, 'r') as zipf1, \
              zipfile.ZipFile(other_version.zip_name, 'r') as zipf2:
             
@@ -210,7 +259,7 @@ class FileVersion:
         additions = sum(1 for line in diff if line.startswith('+') and not line.startswith('+++'))
         deletions = sum(1 for line in diff if line.startswith('-') and not line.startswith('---'))
 
-        print(f"Changes between {self.file_name} {self.version} and {other_version.version}:")
+        print(f"Changes between {self.file_name} {self.version} and {other_version.version}")
         print(f"  Additions: {additions}")
         print(f"  Deletions: {deletions}")
 
@@ -220,7 +269,7 @@ class CommitLog:
         self.metadata_file = metadata_file
     
     def add_commit(self, file_name, version):
-        """Adds a new commit entry to the metadata file."""
+        """Adds a new commit entry to the metadata file"""
         with open(self.metadata_file, "r+") as f:
             metadata = json.load(f)
             metadata["commits"].append({"file": file_name, "version": version})
@@ -228,13 +277,19 @@ class CommitLog:
             json.dump(metadata, f, indent=4)
     
     def get_commits(self):
-        """Fetches all commits from the metadata."""
+        """Fetches all commits from the metadata"""
         with open(self.metadata_file, "r") as f:
             return json.load(f)["commits"]
 
 
 class VCSInterface(cmd.Cmd):
-    intro = """
+    def __init__(self, repository):
+        super().__init__()
+        self.repo = repository
+        self.prompt = f"(vcs) {repository.user}@{repository.repo_dir}> "
+        self.intro = "Welcome to your version control system!"
+        readline.set_history_length(100)
+        self.intro = """
 \033[4m\033[1mVCS commands\033[0m
     \033[1minit\033[0m create an empty zipfile repository
     \033[1mcommit <file_path> <version>\033[0m save a file to the zipfile repository at version <version>
@@ -253,12 +308,6 @@ class VCSInterface(cmd.Cmd):
     \033[1mexit or quit\033[0m
 
 """
-    prompt = "(vcs) $ "
-
-    def __init__(self, repository):
-        super().__init__()
-        self.repo = repository
-
     def do_commit(self, args):
         """Commit a file. Usage: commit <file_path> <version>"""
         try:
@@ -268,7 +317,7 @@ class VCSInterface(cmd.Cmd):
             print("Invalid arguments! Use: commit <file_path> <version>")
 
     def do_log(self, args):
-        """Show the commit log."""
+        """Show the commit log"""
         self.repo.log()
 
     def do_checkout(self, args):
@@ -299,6 +348,13 @@ class VCSInterface(cmd.Cmd):
         except ValueError:
             print("Invalid arguments! Use: metrics <file_name> <version1> <version2>")
 
+    def complete_switch_branch(self, text, line, begidx, endidx):
+        """Auto-complete branch names for the switch_branch command"""
+        with open(self.repo.metadata_file, "r") as f:
+            metadata = json.load(f)
+        branches = metadata["branches"].keys()
+        return [branch for branch in branches if branch.startswith(text)]
+
     def do_create_branch(self, args):
         """Create a new branch. Usage: create_branch <branch_name>"""
         self.repo.create_branch(args)
@@ -320,7 +376,7 @@ class VCSInterface(cmd.Cmd):
             print("Invalid arguments! Use: add_tag <tag_name> <version>")
 
     def do_list_tags(self, args):
-        """List all tags in the repository."""
+        """List all tags in the repository"""
         self.repo.list_tags()
 
     def do_push(self, args):
@@ -334,15 +390,18 @@ class VCSInterface(cmd.Cmd):
     def do_set_user(self, args):
         """Set the user for the repository. Usage: set_user <user_name>"""
         self.repo.user = args
-        print(f"User set to {args}.")
+        print(f"User set to {args}")
+
+    def do_help(self, args):
+        print(self.intro)
 
     def do_exit(self, args):
-        """Exit the VCS interface."""
+        """Exit the VCS interface"""
         print("Exiting...")
         return True
     
     def do_quit(self, args):
-        """Exit the VCS interface."""
+        """Exit the VCS interface"""
         print("Exiting...")
         return True
 
