@@ -140,6 +140,15 @@ class Repository:
         self.save_branch_metadata(branch_name, current_metadata)
         print(f"Branch '{branch_name}' created based on '{self.current_branch}'")
 
+    def list_branches(self):
+        """Lists all available branches in the repository"""
+        branches = []
+        for file in os.listdir(self.repo_dir):
+            if file.endswith("_metadata.json"):
+                branch_name = file.replace("_metadata.json", "")
+                branches.append(branch_name)
+        return branches
+    
     def switch_branch(self, branch_name):
         """Switches to a different branch"""
         branch_metadata_file = os.path.join(self.repo_dir, f"{branch_name}_metadata.json")
@@ -387,6 +396,13 @@ class VCSInterface(cmd.Cmd):
     def do_create_branch(self, branch_name):
         """Create a new branch. Usage: create_branch <branch_name>"""
         self.repo.create_branch(branch_name)
+
+    def do_list_branches(self, args):
+        """Lists all available branches. Usage: list_branches"""
+        branches = self.repo.list_branches()
+        print("Available branches:")
+        for branch in branches:
+            print(f"  - {branch}")
 
     def do_switch_branch(self, branch_name):
         """Switch to a branch. Usage: switch_branch <branch_name>"""
