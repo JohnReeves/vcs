@@ -55,31 +55,31 @@ class Repository:
 
         return current_data != previous_data
 
-def commit_file(self, file_path, version):
-    """Commits a file by saving its version in the current branch metadata"""
-    file_name = os.path.basename(file_path)
-    branch_metadata = self.load_branch_metadata(self.current_branch)
-
-    # Check for file changes before committing
-    if file_name in branch_metadata["files"]:
-        last_version = branch_metadata["files"][file_name]
-        if not self.detect_file_changes(file_path, last_version):
-            print(f"No changes detected in '{file_name}', skipping commit")
-            return
-
-    # Save the new version
-    versioned_file = FileVersion(file_name, version, self.versions_dir)
-    versioned_file.zip_file(file_path)
-
-    # Update metadata
-    branch_metadata["files"][file_name] = version
-    branch_metadata["commits"].append({
-        "file": file_name,
-        "version": version,
-        "user": self.user
-    })
-    self.save_branch_metadata(self.current_branch, branch_metadata)
-    print(f"Committed '{file_name}' as version {version} by '{self.user}'")
+    def commit_file(self, file_path, version):
+        """Commits a file by saving its version in the current branch metadata"""
+        file_name = os.path.basename(file_path)
+        branch_metadata = self.load_branch_metadata(self.current_branch)
+    
+        # Check for file changes before committing
+        if file_name in branch_metadata["files"]:
+            last_version = branch_metadata["files"][file_name]
+            if not self.detect_file_changes(file_path, last_version):
+                print(f"No changes detected in '{file_name}', skipping commit")
+                return
+    
+        # Save the new version
+        versioned_file = FileVersion(file_name, version, self.versions_dir)
+        versioned_file.zip_file(file_path)
+    
+        # Update metadata
+        branch_metadata["files"][file_name] = version
+        branch_metadata["commits"].append({
+            "file": file_name,
+            "version": version,
+            "user": self.user
+        })
+        self.save_branch_metadata(self.current_branch, branch_metadata)
+        print(f"Committed '{file_name}' as version {version} by '{self.user}'")
 
     def log(self):
         """Prints the commit history"""
