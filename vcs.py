@@ -332,7 +332,7 @@ class VCSInterface(cmd.Cmd):
     \033[1mpush <remote_dir>\033[0m pushes the current branch to a remote directory
     \033[1mpull <remote_dir>\033[0m pulls the latest changes from a remote directory
     \033[1mset_user <user_name>\033[0m sets the current user who will be associated with commits
-    \033[1mcdiff <file_name> <version1> <version2>\033[0m list the differences in the committed file at version <version1> and <version2>
+    \033[1mdiff <file_name> <version1> <version2>\033[0m list the differences in the committed file at version <version1> and <version2>
     \033[1mmetrics <file_name> <version1> <version2>033[0m display metrics for the committed file
     \033[1mexit or quit\033[0m
 
