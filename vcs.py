@@ -59,18 +59,18 @@ class Repository:
         """Commits a file by saving its version in the current branch metadata"""
         file_name = os.path.basename(file_path)
         branch_metadata = self.load_branch_metadata(self.current_branch)
-    
+
         # Check for file changes before committing
         if file_name in branch_metadata["files"]:
             last_version = branch_metadata["files"][file_name]
             if not self.detect_file_changes(file_path, last_version):
                 print(f"No changes detected in '{file_name}', skipping commit")
                 return
-    
+
         # Save the new version
         versioned_file = FileVersion(file_name, version, self.versions_dir)
         versioned_file.zip_file(file_path)
-    
+
         # Update metadata
         branch_metadata["files"][file_name] = version
         branch_metadata["commits"].append({
@@ -123,17 +123,21 @@ class Repository:
                 # No conflict, add the file
                 current_metadata["files"][file_name] = source_version
             else:
-                # Conflict: Resolve manually or automatically
+                # Check for conflicts and incremental changes
                 current_version = current_metadata["files"][file_name]
-                print(f"Conflict in '{file_name}':")
-                print(f"  Current version: {current_version}, Source version: {source_version}")
-                choice = input(f"Choose 'current' or 'source' for '{file_name}': ").strip().lower()
-                if choice == "source":
-                    current_metadata["files"][file_name] = source_version
+                if source_version != current_version:
+                    print(f"Conflict detected in '{file_name}'")
+                    choice = input(f"Choose 'current' or 'source' for '{file_name}': ").strip().lower()
+                    if choice == "source":
+                        current_metadata["files"][file_name] = source_version
+                    else:
+                        print(f"Kept current version for '{file_name}'")
+                else:
+                    print(f"No changes detected in '{file_name}', skipping merge")
 
         self.save_branch_metadata(self.current_branch, current_metadata)
         print(f"Merged '{source_branch}' into '{self.current_branch}'")
-        
+                
     def add_tag(self, tag_name):
         """Tags the latest commit on the current branch"""
         branch_metadata = self.load_branch_metadata(self.current_branch)
