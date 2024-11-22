@@ -1,11 +1,51 @@
 import os
+import re
+import cmd
 import json
 import time
-import shutil
 import difflib
 import zipfile
-import readline
-import cmd
+
+
+class VersionNumber:
+    def __init__(self, major=0, minor=0):
+        self.major = major
+        self.minor = minor
+
+    def __str__(self):
+        """Returns the version as a string in 'major.minor' format"""
+        return f"{self.major}.{self.minor}"
+    
+    @classmethod
+    def parse(cls, version_str):
+        """ Parses a version string in the form 'major.minor' and returns a VersionNumber instance"""
+        if not re.match(r'^\d+\.\d+$', version_str):
+            raise ValueError("Version number must be in the format 'major.minor' with integers.")
+        major, minor = map(int, version_str.split('.'))
+        return cls(major, minor)
+
+    def auto_increment(self):
+        """ Returns the next minor version number, keeping the major version constant"""
+        return VersionNumber(self.major, self.minor + 1)
+
+    def is_consecutive(self, last_version):
+        """Validates that this version is consecutive with the last version"""
+        if self.major == last_version.major:
+            return self.minor == last_version.minor + 1
+        return False
+
+    @staticmethod
+    def validate_version(version, commit_log):
+        """Validates that the version is unique and consecutive with the last version in the commit log"""
+        if version in commit_log:
+            raise ValueError(f"Version {version} already exists in the commit log.")
+        if commit_log:
+            last_version = VersionNumber.parse(commit_log[-1]['version'])
+            if not version.is_consecutive(last_version):
+                raise ValueError(
+                    f"Version {version} is not consecutive with the last version {last_version}."
+                )
+
 
 class Repository:
     def __init__(self, repo_dir, user):
@@ -30,6 +70,19 @@ class Repository:
             raise FileNotFoundError(f"Error: File '{file_path}' does not exist")
         if not os.path.isfile(file_path):
             raise ValueError(f"Error: '{file_path}' is not a valid file")
+
+    def get_last_version(self, filename):
+        """Retrieves the last version of the given file from the commit log"""
+        commits = self.get_commit_log(filename)
+        if not commits:
+            return VersionNumber(0, 0)  # incremented later to 0.1
+        last_commit = commits[-1]
+        return VersionNumber.parse(last_commit['version'])
+
+    def suggest_next_version(self, filename):
+        """Suggests the next minor version for the file"""
+        last_version = self.get_last_version(filename)
+        return last_version.auto_increment()
 
     def load_branch_metadata(self, branch_name):
         """Loads metadata for a specific branch from its dedicated file"""
@@ -83,14 +136,12 @@ class Repository:
         file_name = os.path.basename(file_path)
         branch_metadata = self.load_branch_metadata(self.current_branch)
 
-        # Validate version string
-        if not version.isdigit():
-            print("Error: Version must be a numeric string")
-            return
-
         # Check for file changes before committing
         if file_name in branch_metadata["files"]:
             last_version = branch_metadata["files"][file_name]
+            if last_version == version:
+                print(f"Version {version} exists. Please increment the version number")
+                return
             if not self.detect_file_changes(file_path, last_version):
                 print(f"No changes detected in '{file_name}', skipping commit")
                 return
@@ -133,6 +184,17 @@ class Repository:
         print("Commit history:")
         for commit in metadata["commits"]:
             print(f"File: {commit['file']} | Version: {commit['version']}")
+
+    def get_commit_log(self, filename):
+        """Prints the commit history"""
+        commit_log = []
+        with open(self.metadata_file, "r") as f:
+            metadata = json.load(f)
+
+        for commit in metadata["commits"]:
+            if commit["file"] == filename:
+                commit_log.append(commit)
+        return commit_log
 
     def create_branch(self, branch_name):
         """Creates a new branch based on the current branch"""
@@ -251,6 +313,7 @@ class Repository:
         self.save_branch_metadata(self.current_branch, current_metadata)
         print(f"Pulled updates for branch '{self.current_branch}' from remote '{remote_dir}'")
 
+
 class FileVersion:
     def __init__(self, file_name, version, versions_dir):
         self.file_name = file_name
@@ -326,33 +389,52 @@ class VCSInterface(cmd.Cmd):
         self.repo = repo
         self.prompt = f"(vcs) {repo.user}@{repo.repo_dir}> "
         self.intro = "Welcome to your version control system!"
-        readline.set_history_length(100)
         self.intro = """
 \033[4m\033[1mVCS commands\033[0m
     \033[1minit\033[0m create an empty zipfile repository
+
+\033[1m \033[4mGet started commands\033[0m
+    \033[1mset_user <user_name>\033[0m sets the current user who will be associated with commits
     \033[1mcommit <file_path> <version>\033[0m save a file to the zipfile repository at version <version>
-    \033[1mlog <file_path>\033[0m displays the version history of a file in the zipfile repository
     \033[1mcheckout <file_path> <version>\033[0m recovers a file from the zipfile repository at version <version>
+    \033[1mlog <file_path>\033[0m displays the version history of a file in the zipfile repository
+
+\033[1m \033[4mBranch commands\033[0m
     \033[1mcreate_branch <branch_name>\033[0m creates a new branch
     \033[1mswitch_branch <branch_name>\033[0m switches to the specified branch
     \033[1mmerge_branch <source_branch>\033[0m merges changes from the source branch into the current branch.
+
+\033[1m \033[4mTagging commands\033[0m
     \033[1madd_tag <tag_name> <version>\033[0m creates a tag that points to a specific version
     \033[1mlist_tags\033[0m lists all tags associated with specific commits
+
+\033[1m \033[4mRemote repository commands\033[0m
     \033[1mpush <remote_dir>\033[0m pushes the current branch to a remote directory
     \033[1mpull <remote_dir>\033[0m pulls the latest changes from a remote directory
-    \033[1mset_user <user_name>\033[0m sets the current user who will be associated with commits
+
+\033[1m \033[4mCoding metric commands\033[0m
     \033[1mdiff <file_name> <version1> <version2>\033[0m list the differences in the committed file at version <version1> and <version2>
     \033[1mmetrics <file_name> <version1> <version2>033[0m display metrics for the committed file
+
     \033[1mexit or quit\033[0m
 
 """
     def do_commit(self, args):
-        """Commit a file. Usage: commit <file_path> <version>"""
+        """Commit a file. Usage: commit <file_path>"""
+        filename = args.strip()
+        if not filename:
+            print("Usage: commit <filename>")
+            return
+
+        suggested_version = self.repo.suggest_next_version(filename)
+        print(f"Commit {filename} at version: {suggested_version}: press enter to continue, or type a new version number: ", end="")
+        user_input = input().strip() or str(suggested_version)
+
         try:
-            file_path, version = args.split()
-            self.repo.commit_file(file_path, version)
-        except ValueError:
-            print("Invalid arguments! Use: commit <file_path> <version>")
+            version = VersionNumber.parse(user_input)
+            self.repo.commit_file(filename, str(version))
+        except ValueError as e:
+            print(f"error {e}")
 
     def do_log(self, args):
         """Show the commit log"""
