@@ -121,27 +121,86 @@ class Repository:
             for file in files:
                 print(f"  - {file} (Latest Version: {self.commit_log.get_version(file)})")
 
-    # --- branch management ---
+    # --- Branch Management ---
     def create_branch(self, branch_name):
-        """Create a new branch"""
+        """Create a new branch."""
         branch_metadata_file = os.path.join(self.repo_dir, f"{branch_name}_metadata.json")
         if os.path.exists(branch_metadata_file):
-            print(f"Branch '{branch_name}' already exists")
+            print(f"Branch '{branch_name}' already exists.")
             return
         with open(branch_metadata_file, "w") as f:
             json.dump({"files": {}, "commits": [], "tags": {}}, f)
-        print(f"Branch '{branch_name}' created")
+        print(f"Branch '{branch_name}' created.")
 
     def switch_branch(self, branch_name):
-        """Switch to an existing branch"""
+        """Switch to an existing branch."""
         branch_metadata_file = os.path.join(self.repo_dir, f"{branch_name}_metadata.json")
         if not os.path.exists(branch_metadata_file):
-            print(f"Branch '{branch_name}' does not exist")
+            print(f"Branch '{branch_name}' does not exist.")
             return
         self.current_branch = branch_name
         self.metadata_file = branch_metadata_file
         self.commit_log = CommitLog(self.metadata_file)
-        print(f"Switched to branch '{branch_name}'")
+        print(f"Switched to branch '{branch_name}'.")
+
+    def list_branches(self):
+        """List all branches in the repository."""
+        branches = []
+        for file_name in os.listdir(self.repo_dir):
+            if file_name.endswith("_metadata.json"):
+                branches.append(file_name.replace("_metadata.json", ""))
+        if branches:
+            print("Branches:")
+            for branch in branches:
+                print(f"  - {branch}")
+        else:
+            print("No branches found.")
+
+    def merge_branch(self, source_branch):
+        """Merge the changes from a source branch into the current branch."""
+        if source_branch == self.current_branch:
+            print("Error: Cannot merge a branch into itself.")
+            return
+
+        source_metadata_file = os.path.join(self.repo_dir, f"{source_branch}_metadata.json")
+        if not os.path.exists(source_metadata_file):
+            print(f"Error: Branch '{source_branch}' does not exist.")
+            return
+
+        # Load metadata from the source branch
+        with open(source_metadata_file, "r") as f:
+            source_metadata = json.load(f)
+
+        # Merge commits and tags into the current branch
+        current_metadata = self.commit_log.metadata
+        current_files = current_metadata["files"]
+        source_files = source_metadata["files"]
+
+        # Merge files
+        for file_name, file_versions in source_files.items():
+            if file_name not in current_files:
+                current_files[file_name] = file_versions
+            else:
+                # Merge versions uniquely
+                existing_versions = {v["version"] for v in current_files[file_name]}
+                for version_entry in file_versions:
+                    if version_entry["version"] not in existing_versions:
+                        current_files[file_name].append(version_entry)
+
+        # Merge commits
+        existing_commits = {(c["file"], c["version"]) for c in current_metadata["commits"]}
+        for commit in source_metadata["commits"]:
+            if (commit["file"], commit["version"]) not in existing_commits:
+                current_metadata["commits"].append(commit)
+
+        # Merge tags
+        for tag_name, tag_data in source_metadata.get("tags", {}).items():
+            if tag_name not in current_metadata["tags"]:
+                current_metadata["tags"][tag_name] = tag_data
+
+        # Save merged metadata
+        self.commit_log.save_metadata()
+        print(f"Branch '{source_branch}' merged into '{self.current_branch}'.")
 
     # --- remote repository management ---
     def push(self):
@@ -182,7 +241,7 @@ class Repository:
         self.commit_log.save_metadata()
         print(f"Tag '{tag_name}' created for file '{file_name}' version '{version}'")
 
-    def get_tags(self):
+    def list_tags(self):
         """List all tags"""
         tags = self.commit_log.metadata.get("tags", {})
         if not tags:
@@ -386,7 +445,7 @@ class VCSInterface(cmd.Cmd):
     \033[1mmerge_branch <source_branch>\033[0m merges changes from the source branch into the current branch.
 
 \033[1m \033[4mTagging commands\033[0m
-    \033[1madd_tag <tag_name> <version>\033[0m creates a tag that points to a specific version
+    \033[1mcreate_tag <tag_name> <version>\033[0m creates a tag that points to a specific version
     \033[1mlist_tags\033[0m lists all tags associated with specific commits
 
 \033[1m \033[4mRemote repository commands\033[0m
@@ -475,25 +534,25 @@ class VCSInterface(cmd.Cmd):
         """Merge a branch into the current branch. Usage: merge_branch <source_branch>"""
         self.repo.merge_branch(source_branch)
 
-    def do_add_tag(self, args):
-        """Add a tag to a version. Usage: add_tag <tag_name> <version>"""
+    def do_create_tag(self, args):
+        """Add a tag to a version. Usage: create_tag <tag_name> <filename> <version>"""
         try:
-            tag_name, version = args.split()
-            self.repo.add_tag(tag_name, version)
+            tag_name, file_name, version = args.split()
+            self.repo.create_tag(tag_name, version)
         except ValueError:
-            print("Invalid arguments! Use: add_tag <tag_name> <version>")
+            print("Invalid arguments! Use: create_tag <tag_name> <filename> <version>")
 
     def do_list_tags(self, args):
-        """List all tags in the repository"""
+        """List all tags in the repository. Usage: list_tags"""
         self.repo.list_tags()
 
-    def do_push(self, remote_dir):
-        """Push changes to a remote repository. Usage: push <remote_directory>"""
-        self.repo.push(remote_dir)
+    def do_push(self):
+        """Push changes to a remote repository. Usage: push"""
+        self.repo.push()
 
-    def do_pull(self, remote_dir):
-        """Pull changes from a remote repository. Usage: pull <remote_directory>"""
-        self.repo.pull(remote_dir)
+    def do_pull(self):
+        """Pull changes from a remote repository. Usage: pull"""
+        self.repo.pull()
 
     def do_set_user(self, user_name):
         """Set the user for the repository. Usage: set_user <user_name>"""
