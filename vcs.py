@@ -131,7 +131,6 @@ class Repository:
             for file in files:
                 print(f"  - {file} (Latest Version: {self.commit_log.get_version(file)})")
 
-    # --- rollback ---
     def rollback_file(self, file_name, version):
         """Rollback a file to a specific version"""
         versioned_file = FileVersion(file_name, version, self.repo_dir)
@@ -153,7 +152,7 @@ class Repository:
         version = target_commit["version"]
         self.rollback_file(file_name, version)
 
-    # --- Branch Management ---
+    # --- branch management ---
     def create_branch(self, branch_name):
         """Create a new branch."""
         branch_metadata_file = os.path.join(self.repo_dir, f"{branch_name}_metadata.json")
@@ -432,7 +431,6 @@ class CommitLog:
         return VersionNumber(major, minor).auto_increment()
 
 
-
 class VCSInterface(cmd.Cmd):
     def __init__(self, repo):
         super().__init__()
@@ -469,18 +467,14 @@ class VCSInterface(cmd.Cmd):
     \033[1mexit or quit\033[0m
 
 """
+    # --- commit and log commands ---
     def do_commit(self, args):
         """Commit a file. Usage: commit <filename>"""
         filename = args.strip()
         if not filename:
             print("Usage: commit <filename>")
             return
-        
         self.repo.commit_file(filename)
-
-    def do_log(self, _):
-        """Show the commit log"""
-        self.repo.log()
 
     def do_checkout(self, args):
         """Checkout a specific version. Usage: checkout <file_name> <version>"""
@@ -489,13 +483,17 @@ class VCSInterface(cmd.Cmd):
             self.repo.rollback_file(file_name, version)
         except ValueError:
             print("Invalid arguments! Use: checkout <file_name> <version>")
-    
+
+    def do_log(self, _):
+        """Show the commit log"""
+        self.repo.log()
+
     def do_diff(self, args):
         """Show diff between two versions. Usage: diff <file_name> <version1> <version2>"""
         try:
             file_name, version1, version2 = args.split()
-            version1_obj = FileVersion(file_name, version1, self.repo.versions_dir)
-            version2_obj = FileVersion(file_name, version2, self.repo.versions_dir)
+            version1_obj = FileVersion(file_name, version1, self.repo.repo_dir)
+            version2_obj = FileVersion(file_name, version2, self.repo.repo_dir)
             version1_obj.show_diff(version2_obj)
         except ValueError:
             print("Invalid arguments! Use: diff <file_name> <version1> <version2>")
@@ -504,19 +502,13 @@ class VCSInterface(cmd.Cmd):
         """Usage: metrics <file_name> <version1> <version2>"""
         try:
             file_name, version1, version2 = args.split()
-            version1_obj = FileVersion(file_name, version1, self.repo.versions_dir)
-            version2_obj = FileVersion(file_name, version2, self.repo.versions_dir)
+            version1_obj = FileVersion(file_name, version1, self.repo.repo_dir)
+            version2_obj = FileVersion(file_name, version2, self.repo.repo_dir)
             version1_obj.calculate_metrics(version2_obj)
         except ValueError:
             print("Invalid arguments! Use: metrics <file_name> <version1> <version2>")
 
-    def complete_switch_branch(self, text, line, begidx, endidx):
-        """Auto-complete branch names for the switch_branch command"""
-        with open(self.repo.metadata_file, "r") as f:
-            metadata = json.load(f)
-        branches = metadata["branches"].keys()
-        return [branch for branch in branches if branch.startswith(text)]
-
+    # --- branch commands ---
     def do_create_branch(self, branch_name):
         """Create a new branch. Usage: create_branch <branch_name>"""
         self.repo.create_branch(branch_name)
@@ -536,6 +528,13 @@ class VCSInterface(cmd.Cmd):
         except:
             print("Invalid arguments! Useage: switch_branch <source_branch>")
 
+    def complete_switch_branch(self, text, line, begidx, endidx):
+        """Auto-complete branch names for the switch_branch command"""
+        with open(self.repo.metadata_file, "r") as f:
+            metadata = json.load(f)
+        branches = metadata["branches"].keys()
+        return [branch for branch in branches if branch.startswith(text)]
+    
     def do_merge_branch(self, args):
         """Merge a branch into the current branch. Usage: merge_branch <source_branch>"""
         try:
@@ -544,6 +543,7 @@ class VCSInterface(cmd.Cmd):
         except:
             print("Invalid arguments! Useage: merge_branch <source_branch>")
 
+    # --- tagging commands ---
     def do_create_tag(self, args):
         """Add a tag to a version. Usage: create_tag <tag_name> <filename> <version>"""
         try:
@@ -556,6 +556,7 @@ class VCSInterface(cmd.Cmd):
         """List all tags in the repository"""
         self.repo.list_tags()
 
+    # --- remote repository commands ---
     def do_push(self, _):
         """Push changes to a remote repository. Usage: push <remote_directory>"""
         self.repo.push()
@@ -564,6 +565,7 @@ class VCSInterface(cmd.Cmd):
         """Pull changes from a remote repository. Usage: pull <remote_directory>"""
         self.repo.pull()
 
+    # --- miscellaneous commands ---
     def do_set_user(self, user_name):
         """Set the user for the repository. Usage: set_user <user_name>"""
         self.repo.user = user_name
