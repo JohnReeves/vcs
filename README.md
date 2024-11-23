@@ -14,10 +14,10 @@ a version control system in python
 
 ## class structure
 - `Repository` manages the repository (initialization, commits, file versioning)
-- `VersionNumbers` represents a <major>.<minor> version number, and parse, validate and increment methods
+- `VersionNumber` represents a <major>.<minor> version number, and parse, validate and increment methods
 - `FileVersion` represents a versioned file, handles zipping/unzipping and comparison between versions
-- `VCSInterface` defines the vcs application command-line interface using cmd
 - `CommitLog` manages commits and commit history
+- `VCSInterface` defines the vcs application command-line interface using cmd
 
 ## the file structure
 ```
