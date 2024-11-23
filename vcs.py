@@ -52,7 +52,6 @@ class Repository:
     def __init__(self, repo_dir, user):
         self.user = user
         self.repo_dir = os.path.join(repo_dir, "versions")
-        #self.versions_dir = os.path.join(repo_dir, "versions")
         self.current_branch = "main"
         self.remote_repo = None  # Simulating a remote repository
         self.locked = False  # Remote repository lock status
@@ -91,18 +90,6 @@ class Repository:
         self.commit_log.add_commit(file_path, version, self.user)
         print(f"Committed '{file_path}' as version {version}")
 
-    def checkout(self, file_name, version):
-        """Restores a file from a specific version."""
-        print(version, str(version), type(version))
-        try:
-            versioned_file = FileVersion(file_name, version, self.repo_dir)
-            versioned_file.unzip_file()
-            print(f"Checked out {file_name} version {version}.")
-        except FileNotFoundError:
-            print(f"checkout Error: Version '{version}' of '{file_name}' does not exist")
-        except Exception as e:
-            print(f"Error during checkout: {e}")
-
     def detect_file_changes(self, file_path, last_version):
         """Detects if the file has changed compared to its last committed version"""
         file_name = os.path.basename(file_path)
@@ -125,7 +112,6 @@ class Repository:
             print(f"Error comparing versions of '{file_name}': {e}")
             return True
 
-
     def log(self, filename=None):
         """Print the commit log for a file or all files"""
         log = self.commit_log.get_commit_log(filename)
@@ -144,6 +130,28 @@ class Repository:
             print("Files in repository:")
             for file in files:
                 print(f"  - {file} (Latest Version: {self.commit_log.get_version(file)})")
+
+    # --- rollback ---
+    def rollback_file(self, file_name, version):
+        """Rollback a file to a specific version"""
+        versioned_file = FileVersion(file_name, version, self.repo_dir)
+        print(file_name, version, self.repo_dir)
+
+        if not versioned_file.restore_file(versioned_file):
+            print(f"Error: Version '{version}' of file '{file_name}' not found")
+            return
+        print(f"File '{file_name}' rolled back to version '{version}'")
+
+    def rollback_commit(self, commit_index):
+        """Rollback to a specific commit"""
+        commits = self.commit_log.get_commit_log()
+        if commit_index >= len(commits) or commit_index < 0:
+            print("Error: Invalid commit index")
+            return
+        target_commit = commits[commit_index]
+        file_name = target_commit["file"]
+        version = target_commit["version"]
+        self.rollback_file(file_name, version)
 
     # --- Branch Management ---
     def create_branch(self, branch_name):
@@ -226,6 +234,23 @@ class Repository:
         self.commit_log.save_metadata()
         print(f"Branch '{source_branch}' merged into '{self.current_branch}'.")
 
+    # --- tagging ---
+    def create_tag(self, tag_name, file_name, version):
+        """Create a tag for a specific file and version"""
+        self.commit_log.metadata["tags"][tag_name] = {"file": file_name, "version": version}
+        self.commit_log.save_metadata()
+        print(f"Tag '{tag_name}' created for file '{file_name}' version '{version}'")
+
+    def list_tags(self):
+        """List all tags"""
+        tags = self.commit_log.metadata.get("tags", {})
+        if not tags:
+            print("No tags found")
+        else:
+            print("Tags:")
+            for tag, info in tags.items():
+                print(f"  - {tag}: File '{info['file']}' Version '{info['version']}'")
+
     # --- remote repository management ---
     def push(self):
         """Push changes to the remote repository"""
@@ -258,45 +283,6 @@ class Repository:
         self.locked = False
         print("Remote repository unlocked")
 
-    # --- tagging ---
-    def create_tag(self, tag_name, file_name, version):
-        """Create a tag for a specific file and version"""
-        self.commit_log.metadata["tags"][tag_name] = {"file": file_name, "version": version}
-        self.commit_log.save_metadata()
-        print(f"Tag '{tag_name}' created for file '{file_name}' version '{version}'")
-
-    def list_tags(self):
-        """List all tags"""
-        tags = self.commit_log.metadata.get("tags", {})
-        if not tags:
-            print("No tags found")
-        else:
-            print("Tags:")
-            for tag, info in tags.items():
-                print(f"  - {tag}: File '{info['file']}' Version '{info['version']}'")
-
-    # --- rollback ---
-    def rollback_file(self, file_name, version):
-        """Rollback a file to a specific version"""
-        versioned_file = FileVersion(file_name, version, self.repo_dir)
-        print(file_name, version, self.repo_dir)
-
-        if not versioned_file.restore_file(versioned_file):
-            print(f"Error: Version '{version}' of file '{file_name}' not found")
-            return
-        print(f"File '{file_name}' rolled back to version '{version}'")
-
-    def rollback_commit(self, commit_index):
-        """Rollback to a specific commit"""
-        commits = self.commit_log.get_commit_log()
-        if commit_index >= len(commits) or commit_index < 0:
-            print("Error: Invalid commit index")
-            return
-        target_commit = commits[commit_index]
-        file_name = target_commit["file"]
-        version = target_commit["version"]
-        self.rollback_file(file_name, version)
-
 
 class FileVersion:
     def __init__(self, file_name, version, versions_dir):
@@ -318,19 +304,6 @@ class FileVersion:
         """Unzips the versioned file to the current directory"""
         with zipfile.ZipFile(self.zip_name, 'r') as zipf:
             zipf.extract(self.file_name, output_dir)
-        
-    def save_version(self, version_name=None):
-        """Save the current version of the file into a zip archive"""
-        if not os.path.exists(self.file_path):
-            print(f"Error: File '{self.file_path}' does not exist")
-            return False
-        if version_name is None:
-            version_name = datetime.now().strftime("%Y%m%d_%H%M%S")
-        version_file = os.path.join(self.versions_dir, f"{version_name}.zip")
-        with zipfile.ZipFile(version_file, "w") as zf:
-            zf.write(self.file_path, os.path.basename(self.file_path))
-        print(f"Version '{version_name}' saved for file '{self.file_path}'")
-        return True
 
     def list_versions(self):
         """List all saved versions of the file from zip archives"""
