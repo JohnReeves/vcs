@@ -51,7 +51,8 @@ class VersionNumber:
 class Repository:
     def __init__(self, repo_dir, user):
         self.user = user
-        self.repo_dir = repo_dir
+        self.repo_dir = os.path.join(repo_dir, "versions")
+        #self.versions_dir = os.path.join(repo_dir, "versions")
         self.current_branch = "main"
         self.remote_repo = None  # Simulating a remote repository
         self.locked = False  # Remote repository lock status
@@ -59,35 +60,40 @@ class Repository:
         self.commit_log = CommitLog(self.metadata_file)
 
     # --- commit and log methods ---
-    def commit_file(self, file_path, version):
+    def commit_file(self, file_path):
         """Commit a file with a specific version"""
         if not os.path.exists(file_path):
             print(f"Error: File '{file_path}' does not exist")
             return
 
-        file_name = os.path.basename(file_path)
+        suggested_version = self.commit_log.get_next_version(file_path)
+        print(f"Commit {file_path} at version: {suggested_version}: press enter to continue, or type a new version number: ", end="")
+        user_input = input().strip() or str(suggested_version)
+
         try:
-            self.commit_log.validate_version(file_name, version)
+            version = str(VersionNumber.parse(user_input))
+            self.commit_log.validate_version(file_path, version)
         except ValueError as e:
-            print(e)
+            print(f"error {e}")
             return
 
         # Detect changes before committing
-        last_commit = self.commit_log.get_last_commit(file_name)
+        last_commit = self.commit_log.get_last_commit(file_path)
         if last_commit:
             last_version = last_commit["version"]
             if not self.detect_file_changes(file_path, last_version):
-                print(f"No changes detected in '{file_name}', skipping commit")
+                print(f"No changes detected in '{file_path}', skipping commit")
                 return
 
         # Create versioned file and add commit
-        versioned_file = FileVersion(file_name, version, self.repo_dir)
+        versioned_file = FileVersion(file_path, version, self.repo_dir)
         versioned_file.zip_file(file_path)
-        self.commit_log.add_commit(file_name, version, self.user)
-        print(f"Committed '{file_name}' as version {version}")
+        self.commit_log.add_commit(file_path, version, self.user)
+        print(f"Committed '{file_path}' as version {version}")
 
     def checkout(self, file_name, version):
         """Restores a file from a specific version."""
+        print(version, str(version), type(version))
         try:
             versioned_file = FileVersion(file_name, version, self.repo_dir)
             versioned_file.unzip_file()
@@ -98,9 +104,27 @@ class Repository:
             print(f"Error during checkout: {e}")
 
     def detect_file_changes(self, file_path, last_version):
-        """Detect whether the file has changes compared to the last version"""
-        versioned_file = FileVersion(os.path.basename(file_path), last_version, self.repo_dir)
-        return versioned_file.has_changes(file_path)
+        """Detects if the file has changed compared to its last committed version"""
+        file_name = os.path.basename(file_path)
+        last_version_path = os.path.join(self.repo_dir, f"{file_name}_{last_version}.zip")
+
+        if not os.path.exists(last_version_path):
+            print(f"Warning: No previous version of '{file_name}' found")
+            return True
+
+        try:
+            with open(file_path, "rb") as current_file:
+                current_data = current_file.read()
+
+            with zipfile.ZipFile(last_version_path, "r") as zip_file:
+                with zip_file.open(file_name, "r") as previous_file:
+                    previous_data = previous_file.read()
+
+            return current_data != previous_data
+        except Exception as e:
+            print(f"Error comparing versions of '{file_name}': {e}")
+            return True
+
 
     def log(self, filename=None):
         """Print the commit log for a file or all files"""
@@ -255,8 +279,10 @@ class Repository:
     def rollback_file(self, file_name, version):
         """Rollback a file to a specific version"""
         versioned_file = FileVersion(file_name, version, self.repo_dir)
+        print(file_name, version, self.repo_dir)
+
         if not versioned_file.restore_file(versioned_file):
-            print(f"rollback Error: Version '{version}' of file '{file_name}' not found")
+            print(f"Error: Version '{version}' of file '{file_name}' not found")
             return
         print(f"File '{file_name}' rolled back to version '{version}'")
 
@@ -279,6 +305,10 @@ class FileVersion:
         self.versions_dir = versions_dir
         self.zip_name = os.path.join(versions_dir, f"{file_name}_{version}.zip")
     
+    def __str__(self):
+        """Returns the version as a string in 'major.minor' format"""
+        return f"{self.zip_name}"
+
     def zip_file(self, file_path):
         """Zips a file and stores it as a version"""
         with zipfile.ZipFile(self.zip_name, 'w') as zipf:
@@ -315,22 +345,19 @@ class FileVersion:
 
     def restore_file(self, version_name):
         """Restore a specific version of the file from a zip archive"""
-        print(version_name, type(version_name), str(version_name))
-
-        version_file = os.path.join(self.versions_dir, f"{version_name}.zip")
+        version_file = version_name.zip_name
         if not os.path.exists(version_file):
-            print(f"restore Error: Version '{version_name}' does not exist for file '{self.file_name}'")
+            print(f"Error: Version '{version_name}' does not exist for file '{self.file_name}'")
             return False
         with zipfile.ZipFile(version_file, "r") as zf:
             zf.extract(os.path.basename(self.file_name), os.path.dirname(self.file_name))
-        print(f"File '{self.file_name}' restored to version '{version_name}'")
+        # print(f"File '{self.file_name}' restored to version '{version_name}'")
         return True
 
     def show_diff(self, other_version):
         """Displays the differences between this version and another version"""
         with zipfile.ZipFile(self.zip_name, 'r') as zipf1, \
              zipfile.ZipFile(other_version.zip_name, 'r') as zipf2:
-            
             file1_content = zipf1.read(self.file_name).decode('utf-8').splitlines()
             file2_content = zipf2.read(other_version.file_name).decode('utf-8').splitlines()
         
@@ -424,7 +451,14 @@ class CommitLog:
     def get_version(self, file_name):
         """Get the latest committed version of a file"""
         return self.metadata["files"].get(file_name, None)
-    
+
+    def get_next_version(self, file_name):
+        """Get the latest committed version of a file"""
+        current_version = self.get_version(file_name)
+        major, minor = map(int, current_version.split('.'))
+        return VersionNumber(major, minor).auto_increment()
+
+
 
 class VCSInterface(cmd.Cmd):
     def __init__(self, repo):
@@ -463,23 +497,15 @@ class VCSInterface(cmd.Cmd):
 
 """
     def do_commit(self, args):
-        """Commit a file. Usage: commit <file_path>"""
+        """Commit a file. Usage: commit <filename>"""
         filename = args.strip()
         if not filename:
             print("Usage: commit <filename>")
             return
+        
+        self.repo.commit_file(filename)
 
-        suggested_version = self.repo.suggest_next_version(filename)
-        print(f"Commit {filename} at version: {suggested_version}: press enter to continue, or type a new version number: ", end="")
-        user_input = input().strip() or str(suggested_version)
-
-        try:
-            version = VersionNumber.parse(user_input)
-            self.repo.commit_file(filename, str(version))
-        except ValueError as e:
-            print(f"error {e}")
-
-    def do_log(self, args):
+    def do_log(self, _):
         """Show the commit log"""
         self.repo.log()
 
@@ -522,7 +548,7 @@ class VCSInterface(cmd.Cmd):
         """Create a new branch. Usage: create_branch <branch_name>"""
         self.repo.create_branch(branch_name)
 
-    def do_list_branches(self, args):
+    def do_list_branches(self, _):
         """Lists all available branches. Usage: list_branches"""
         branches = self.repo.list_branches()
         print("Available branches:")
@@ -553,15 +579,15 @@ class VCSInterface(cmd.Cmd):
         except ValueError:
             print("Invalid arguments! Use: create_tag <tag_name> <version>")
 
-    def do_list_tags(self, args):
+    def do_list_tags(self, _):
         """List all tags in the repository"""
         self.repo.list_tags()
 
-    def do_push(self):
+    def do_push(self, _):
         """Push changes to a remote repository. Usage: push <remote_directory>"""
         self.repo.push()
 
-    def do_pull(self):
+    def do_pull(self, _):
         """Pull changes from a remote repository. Usage: pull <remote_directory>"""
         self.repo.pull()
 
