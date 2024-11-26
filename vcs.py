@@ -51,11 +51,14 @@ class VersionNumber:
 class Repository:
     def __init__(self, repo_dir, user):
         self.user = user
-        self.repo_dir = os.path.join(repo_dir, "versions")
+        self.repo_dir = os.path.join(repo_dir, "_versions")
+        os.makedirs(self.repo_dir, exist_ok=True)
+
         self.current_branch = "main"
         self.remote_repo = None  # Simulating a remote repository
         self.locked = False  # Remote repository lock status
         self.metadata_file = os.path.join(self.repo_dir, f"{self.current_branch}_metadata.json")
+
         self.commit_log = CommitLog(self.metadata_file)
 
     # --- commit and log methods ---
